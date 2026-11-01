@@ -42,3 +42,9 @@ AGENT.md
 **/wiliwili_config.json
 **/cookies.txt
 .DS_Store
+# Keep N1 build recipes and FFmpeg source patches despite upstream globs.
+!/n1/build-app.sh
+!/n1/retained-build/
+!/n1/retained-build/**
+!/n1/ffmpeg/*.patch
+!/n1/patches/ffmpeg-*.patch

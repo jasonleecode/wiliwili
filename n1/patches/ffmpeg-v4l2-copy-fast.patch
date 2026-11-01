@@ -1,0 +1,151 @@
+--- a/libavcodec/v4l2_m2m.c
++++ b/libavcodec/v4l2_m2m.c
+@@ -256,6 +256,7 @@
+     av_frame_unref(s->frame);
+     av_frame_free(&s->frame);
+     av_packet_unref(&s->buf_pkt);
++    av_buffer_pool_uninit(&s->copy_pool);
+ 
+     av_free(s);
+ }
+--- a/libavcodec/v4l2_m2m.h
++++ b/libavcodec/v4l2_m2m.h
+@@ -45,6 +45,8 @@
+     int source_change_pending;
+     unsigned int packets_since_frame;
+     int64_t input_wait_start;
++    AVBufferPool *copy_pool;
++    int copy_pool_size;
+     char devname[PATH_MAX];
+     int fd;
+ 
+@@ -85,6 +87,7 @@
+ 
+     int num_output_buffers;
+     int num_capture_buffers;
++    int n1_copy_frames;
+     enum AVPixelFormat pix_fmt;
+ } V4L2m2mPriv;
+ 
+--- a/libavcodec/v4l2_m2m_dec.c
++++ b/libavcodec/v4l2_m2m_dec.c
+@@ -30,6 +30,8 @@
+ #include "libavutil/pixdesc.h"
+ #include "libavutil/opt.h"
+ #include "libavutil/time.h"
++#include "libavutil/imgutils.h"
++#include "n1_v4l2_copy.h"
+ #include "libavcodec/avcodec.h"
+ #include "codec_internal.h"
+ #include "libavcodec/decode.h"
+@@ -227,7 +229,8 @@
+         return ret;
+     s->packets_since_frame = 0;
+     s->input_wait_start = 0;
+-    if (frame->format != AV_PIX_FMT_NV12)
++    if (!((V4L2m2mPriv*)avctx->priv_data)->n1_copy_frames ||
++        frame->format != AV_PIX_FMT_NV12)
+         return ret;
+     copy = av_frame_alloc();
+     if (!copy) {
+@@ -237,9 +240,36 @@
+     copy->format = frame->format;
+     copy->width = frame->width;
+     copy->height = frame->height;
+-    ret = av_frame_get_buffer(copy, 32);
+-    if (ret >= 0)
+-        ret = av_frame_copy(copy, frame);
++    /* Reuse ordinary cached frame storage. Pool references are independent of
++     * the V4L2 context and remain valid after seek/resolution changes. */
++    ret = av_image_get_buffer_size(AV_PIX_FMT_NV12, FFALIGN(frame->width, 32),
++                                   FFALIGN(frame->height, 32), 32);
++    if (ret > 0) {
++        int size = ret + AV_INPUT_BUFFER_PADDING_SIZE;
++        if (s->copy_pool_size != size) {
++            av_buffer_pool_uninit(&s->copy_pool);
++            s->copy_pool_size = size;
++        }
++        if (!s->copy_pool)
++            s->copy_pool = av_buffer_pool_init(size, NULL);
++        copy->buf[0] = s->copy_pool ? av_buffer_pool_get(s->copy_pool) : NULL;
++        if (!copy->buf[0]) {
++            ret = AVERROR(ENOMEM);
++        } else {
++            ret = av_image_fill_arrays(copy->data, copy->linesize,
++                                       copy->buf[0]->data, AV_PIX_FMT_NV12,
++                                       frame->width, FFALIGN(frame->height, 32), 32);
++        }
++    }
++    if (ret >= 0) {
++        n1_v4l2_copy_plane(copy->data[0], copy->linesize[0],
++                           frame->data[0], frame->linesize[0],
++                           frame->width, frame->height);
++        n1_v4l2_copy_plane(copy->data[1], copy->linesize[1],
++                           frame->data[1], frame->linesize[1],
++                           2 * ((frame->width + 1) / 2), (frame->height + 1) / 2);
++        ret = 0;
++    }
+     if (ret >= 0)
+         ret = av_frame_copy_props(copy, frame);
+     av_frame_unref(frame);
+@@ -344,6 +374,8 @@
+     V4L_M2M_DEFAULT_OPTS,
+     { "num_capture_buffers", "Number of buffers in the capture context",
+         OFFSET(num_capture_buffers), AV_OPT_TYPE_INT, {.i64 = 20}, 20, INT_MAX, FLAGS },
++    { "n1_copy_frames", "Detach frames from the V4L2 capture queue",
++        OFFSET(n1_copy_frames), AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, FLAGS },
+     { "pixel_format", "Pixel format to be used by the decoder", OFFSET(pix_fmt), AV_OPT_TYPE_PIXEL_FMT, {.i64 = AV_PIX_FMT_NONE}, AV_PIX_FMT_NONE, AV_PIX_FMT_NB, FLAGS },
+     { NULL},
+ };
+--- /dev/null
++++ b/libavcodec/n1_v4l2_copy.h
+@@ -0,0 +1,49 @@
++/* Fast, bounded reads from the N1 decoder's CPU-visible DMA mappings.
++ * Retains detached CPU frames so old renderer references cannot pin CAPTURE
++ * allocations across seek/reset. No reads extend past the requested plane.
++ */
++#ifndef AVCODEC_N1_V4L2_COPY_H
++#define AVCODEC_N1_V4L2_COPY_H
++#include <stddef.h>
++#include <stdint.h>
++#include <string.h>
++
++static inline void n1_v4l2_copy_bytes(uint8_t *dst, const uint8_t *src, size_t size)
++{
++#if defined(__aarch64__)
++    size_t blocks = size / 64;
++    if (blocks && !(((uintptr_t)src | (uintptr_t)dst) & 15)) {
++        /* LDP/STP outperformed structured LD1/ST1 by about 4x on the
++         * actual Mali/S905D DMA mapping. Keep independent load addresses. */
++        __asm__ volatile (
++            "1: ldp q0, q1, [%[s], #0]\n"
++            "ldp q2, q3, [%[s], #32]\n"
++            "stp q0, q1, [%[d], #0]\n"
++            "stp q2, q3, [%[d], #32]\n"
++            "add %[s], %[s], #64\n"
++            "add %[d], %[d], #64\n"
++            "subs %[n], %[n], #1\n"
++            "b.ne 1b\n"
++            : [s] "+r"(src), [d] "+r"(dst), [n] "+r"(blocks)
++            : : "v0", "v1", "v2", "v3", "cc", "memory");
++        size &= 63;
++    }
++#endif
++    if (size) memcpy(dst, src, size);
++}
++
++static inline void n1_v4l2_copy_plane(uint8_t *dst, ptrdiff_t dst_stride,
++                                    const uint8_t *src, ptrdiff_t src_stride,
++                                    size_t width, size_t height)
++{
++    if (dst_stride == (ptrdiff_t)width && src_stride == (ptrdiff_t)width) {
++        n1_v4l2_copy_bytes(dst, src, width * height);
++        return;
++    }
++    while (height--) {
++        n1_v4l2_copy_bytes(dst, src, width);
++        dst += dst_stride;
++        src += src_stride;
++    }
++}
++#endif

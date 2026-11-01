@@ -1,0 +1,204 @@
+--- a/libavcodec/v4l2_m2m_dec.c
++++ b/libavcodec/v4l2_m2m_dec.c
+@@ -29,6 +29,7 @@
+ #include "libavutil/pixfmt.h"
+ #include "libavutil/pixdesc.h"
+ #include "libavutil/opt.h"
++#include "libavutil/time.h"
+ #include "libavcodec/avcodec.h"
+ #include "codec_internal.h"
+ #include "libavcodec/decode.h"
+@@ -58,7 +59,7 @@
+         }
+     }
+ 
+-    if (capture->streamon)
++    if (capture->streamon || s->source_change_pending)
+         return 0;
+ 
+     /* 2. get the capture format */
+@@ -130,6 +131,9 @@
+         }
+     }
+ 
++    if (ret == 0)
++        s->source_change_pending = 1;
++
+     memset(&sub, 0, sizeof(sub));
+     sub.type = V4L2_EVENT_EOS;
+     ret = ioctl(s->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
+@@ -140,7 +144,7 @@
+     return 0;
+ }
+ 
+-static int v4l2_receive_frame(AVCodecContext *avctx, AVFrame *frame)
++static int v4l2_receive_frame_internal(AVCodecContext *avctx, AVFrame *frame)
+ {
+     V4L2m2mContext *s = ((V4L2m2mPriv*)avctx->priv_data)->context;
+     V4L2Context *const capture = &s->capture;
+@@ -164,6 +168,11 @@
+     if (ret < 0 && ret != AVERROR(EAGAIN))
+         goto fail;
+ 
++    if (ret == 0 && s->buf_pkt.size) {
++        if (!s->packets_since_frame++)
++            s->input_wait_start = av_gettime_relative();
++    }
++
+     /* if EAGAIN don't unref packet and try to enqueue in the next iteration */
+     if (ret != AVERROR(EAGAIN))
+         av_packet_unref(&s->buf_pkt);
+@@ -182,6 +191,61 @@
+     return ff_v4l2_context_dequeue_frame(capture, frame, -1);
+ fail:
+     av_packet_unref(&s->buf_pkt);
++    return ret;
++}
++
++/* CPU-visible V4L2 frames still own MMAP buffers. Release those references
++ * before handing frames to a renderer that may retain them across a seek.
++ * Otherwise a single old frame pins the entire old CAPTURE allocation. */
++static int v4l2_receive_frame(AVCodecContext *avctx, AVFrame *frame)
++{
++    AVFrame *copy;
++    V4L2m2mContext *s = ((V4L2m2mPriv*)avctx->priv_data)->context;
++    int ret;
++    /* Keep the input backlog within mpv's 32-packet fallback replay cache.
++     * Wait for an output frame instead of consuming the rest of a short clip. */
++    if (s->packets_since_frame >= 24) {
++        do {
++            ret = v4l2_try_start(avctx);
++            if (ret >= 0)
++                ret = ff_v4l2_context_dequeue_frame(&s->capture, frame, 100);
++            if (ret != AVERROR(EAGAIN))
++                break;
++            av_usleep(10000);
++        } while (av_gettime_relative() - s->input_wait_start <= 4000000);
++    } else {
++        ret = v4l2_receive_frame_internal(avctx, frame);
++    }
++    if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
++        if (s->packets_since_frame >= 24 &&
++            (ret == AVERROR_EOF || av_gettime_relative() - s->input_wait_start > 4000000)) {
++            av_log(avctx, AV_LOG_ERROR, "V4L2 decoder produced no frame after %u packets; requesting software fallback\n", s->packets_since_frame);
++            return AVERROR(EIO);
++        }
++    }
++    if (ret < 0)
++        return ret;
++    s->packets_since_frame = 0;
++    s->input_wait_start = 0;
++    if (frame->format != AV_PIX_FMT_NV12)
++        return ret;
++    copy = av_frame_alloc();
++    if (!copy) {
++        av_frame_unref(frame);
++        return AVERROR(ENOMEM);
++    }
++    copy->format = frame->format;
++    copy->width = frame->width;
++    copy->height = frame->height;
++    ret = av_frame_get_buffer(copy, 32);
++    if (ret >= 0)
++        ret = av_frame_copy(copy, frame);
++    if (ret >= 0)
++        ret = av_frame_copy_props(copy, frame);
++    av_frame_unref(frame);
++    if (ret >= 0)
++        av_frame_move_ref(frame, copy);
++    av_frame_free(&copy);
+     return ret;
+ }
+ 
+@@ -258,6 +322,12 @@
+ {
+     V4L2m2mPriv *priv = avctx->priv_data;
+     int ret;
++
++    /* mpv flushes a newly opened decoder before feeding its first packet.
++     * Preserve an untouched session: there are no queues or reference frames
++     * to reset, and reopening it needlessly exercises driver teardown. */
++    if (priv->context && !priv->context->output.streamon)
++        return;
+ 
+     /* meson-vdec needs both queues and its reference pictures reset on seek. */
+     ff_v4l2_m2m_codec_end(priv);
+--- a/libavcodec/v4l2_m2m.h
++++ b/libavcodec/v4l2_m2m.h
+@@ -42,6 +42,9 @@
+         OFFSET(num_output_buffers), AV_OPT_TYPE_INT, { .i64 = 16 }, 6, INT_MAX, FLAGS }
+ 
+ typedef struct V4L2m2mContext {
++    int source_change_pending;
++    unsigned int packets_since_frame;
++    int64_t input_wait_start;
+     char devname[PATH_MAX];
+     int fd;
+ 
+--- a/libavcodec/v4l2_context.c
++++ b/libavcodec/v4l2_context.c
+@@ -194,6 +194,8 @@
+     if (evt.type != V4L2_EVENT_SOURCE_CHANGE)
+         return 0;
+ 
++    s->source_change_pending = 0;
++
+     ret = ioctl(s->fd, VIDIOC_G_FMT, &cap_fmt);
+     if (ret) {
+         av_log(logger(ctx), AV_LOG_ERROR, "%s VIDIOC_G_FMT\n", s->capture.name);
+@@ -205,7 +207,8 @@
+         s->capture.width = v4l2_get_width(&cap_fmt);
+         s->capture.sample_aspect_ratio = v4l2_get_sar(&s->capture);
+     } else {
+-        v4l2_start_decode(ctx);
++        if (s->capture.streamon)
++            v4l2_start_decode(ctx);
+         return 0;
+     }
+ 
+@@ -342,6 +345,22 @@
+         return NULL;
+     }
+ 
++    /* 1. handle resolution changes */
++    if (pfd.revents & POLLPRI) {
++        ret = v4l2_handle_event(ctx);
++        if (ret < 0) {
++            /* if re-init failed, abort */
++            ctx->done = 1;
++            return NULL;
++        }
++        if (ret) {
++            /* if re-init was successful drop the buffer (if there was one)
++             * since we had to reconfigure capture (unmap all buffers)
++             */
++            return NULL;
++        }
++    }
++
+     /* 0. handle errors */
+     if (pfd.revents & POLLERR) {
+         /* if we are trying to get free buffers but none have been queued yet
+@@ -356,22 +375,6 @@
+             av_log(logger(ctx), AV_LOG_WARNING, "%s POLLERR\n", ctx->name);
+ 
+         return NULL;
+-    }
+-
+-    /* 1. handle resolution changes */
+-    if (pfd.revents & POLLPRI) {
+-        ret = v4l2_handle_event(ctx);
+-        if (ret < 0) {
+-            /* if re-init failed, abort */
+-            ctx->done = 1;
+-            return NULL;
+-        }
+-        if (ret) {
+-            /* if re-init was successful drop the buffer (if there was one)
+-             * since we had to reconfigure capture (unmap all buffers)
+-             */
+-            return NULL;
+-        }
+     }
+ 
+     /* 2. dequeue the buffer */
