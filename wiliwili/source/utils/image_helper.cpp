@@ -121,6 +121,14 @@ ImageHelper::~ImageHelper() { brls::Logger::verbose("delete ImageHelper {}", (si
 
 std::shared_ptr<ImageHelper> ImageHelper::with(brls::Image* view) {
     std::lock_guard<std::mutex> lock(requestMutex);
+    auto previous = requestMap.find(view);
+    if (previous != requestMap.end() && (*previous->second)->getImageView() == view)
+        (*previous->second)->cancel();
+    // A reused view must release its old cache reference exactly once before
+    // another request can replace its texture.
+    if (!view->getFreeTexture())
+        brls::TextureCache::instance().removeCache(view->getTexture());
+    view->clear();
     std::shared_ptr<ImageHelper> item;
 
     if (!requestPool.empty() && (*requestPool.begin())->getImageView() == nullptr) {
@@ -177,10 +185,10 @@ void ImageHelper::load(const std::string &url) {
     //todo: 可能会发生同时请求多个重复链接的情况，此种情况下最好合并为一个请求
 
     // 缓存网络图片
-    brls::Logger::verbose("request Image 1: {} {}", this->imageUrl, this->isCancel);
+    brls::Logger::verbose("request Image 1: {} {}", this->imageUrl, this->isCancel.load());
     ImageThreadPool::instance().Submit([this]() {
         brls::Logger::verbose("Submit view: {} {} {} {}", (size_t)this->imageView, (size_t)this, this->imageUrl,
-                              this->isCancel);
+                              this->isCancel.load());
         if (this->isCancel) {
             this->clean();
             return;
@@ -200,7 +208,7 @@ static inline void freeImageData(uint8_t* imageData, bool isWebp) {
 }
 
 void ImageHelper::requestImage() {
-    brls::Logger::verbose("request Image 2: {} {}", this->imageUrl, this->isCancel);
+    brls::Logger::verbose("request Image 2: {} {}", this->imageUrl, this->isCancel.load());
 
     // 请求图片
     cpr::Session session;
@@ -217,7 +225,7 @@ void ImageHelper::requestImage() {
 
     // 图片请求失败或取消请求
     if (r.status_code != 200 || r.downloaded_bytes == 0 || this->isCancel) {
-        brls::Logger::verbose("request undone: {} {} {} {}", r.status_code, r.downloaded_bytes, this->isCancel,
+        brls::Logger::verbose("request undone: {} {} {} {}", r.status_code, r.downloaded_bytes, this->isCancel.load(),
                               r.url.str());
 
         this->clean();
@@ -257,7 +265,18 @@ void ImageHelper::requestImage() {
     }
 #endif
 
-    brls::sync([this, r, imageData, imageW, imageH, isWebp]() {
+    brls::sync([this, imageData, imageW, imageH, isWebp]() {
+        // Cancellation can happen after HTTP/decode completes but before this
+        // UI callback runs. Do not acquire/create an orphaned pinned texture.
+        if (this->isCancel) {
+#ifdef BOREALIS_USE_GXM
+            free(imageData);
+#else
+            freeImageData(imageData, isWebp);
+#endif
+            this->clean();
+            return;
+        }
         // 再检查一遍缓存
         int tex = brls::TextureCache::instance().getCache(this->imageUrl);
         if (tex > 0) {

@@ -34,3 +34,11 @@ android-project
 CLAUDE.md
 # Other AI
 AGENT.md
+# N1 local builds and private runtime configuration
+/build-n1/
+/stage-n1/
+/n1/output/
+/n1/retained-build/output/
+**/wiliwili_config.json
+**/cookies.txt
+.DS_Store

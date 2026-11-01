@@ -1,0 +1,18 @@
+--- a/library/borealis/library/lib/platforms/glfw/glfw_video.cpp
++++ b/library/borealis/library/lib/platforms/glfw/glfw_video.cpp
+@@ -335,6 +335,15 @@
+     // Load OpenGL routines using glad
+     gladLoadGLLoader((GLADloadproc)glfwGetProcAddress);
+ 
++#ifdef USE_GLES2
++    // The bundled desktop GL loader puts framebuffer functions in GL 3.0.
++    // They are core in GLES 2.0, so load them for the video framebuffer too.
++    glad_glGenFramebuffers = (PFNGLGENFRAMEBUFFERSPROC)glfwGetProcAddress("glGenFramebuffers");
++    glad_glBindFramebuffer = (PFNGLBINDFRAMEBUFFERPROC)glfwGetProcAddress("glBindFramebuffer");
++    glad_glFramebufferTexture2D = (PFNGLFRAMEBUFFERTEXTURE2DPROC)glfwGetProcAddress("glFramebufferTexture2D");
++    glad_glCheckFramebufferStatus = (PFNGLCHECKFRAMEBUFFERSTATUSPROC)glfwGetProcAddress("glCheckFramebufferStatus");
++    glad_glDeleteFramebuffers = (PFNGLDELETEFRAMEBUFFERSPROC)glfwGetProcAddress("glDeleteFramebuffers");
++#endif
+ 
+     Logger::info("glfw: GL Vendor: {}", (const char*)glGetString(GL_VENDOR));
+     Logger::info("glfw: GL Renderer: {}", (const char*)glGetString(GL_RENDERER));

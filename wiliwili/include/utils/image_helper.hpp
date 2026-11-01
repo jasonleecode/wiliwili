@@ -6,6 +6,7 @@
 
 #include <cpr/cpr.h>
 #include <ctime>
+#include <atomic>
 #include <random>
 #include <unordered_map>
 #include <borealis/views/image.hpp>
@@ -80,6 +81,17 @@ public:
     inline static const std::string note_raw_ext    = "@256h" IMAGE_EXT;
     static constexpr float note_small               = 0.5f;
 #endif
+#elif defined(N1_LOW_MEMORY)
+    // N1 uses a 1080p, scale-1 desktop: avoid retaining 2x-sized card images.
+    inline static const std::string h_ext           = "@448w_252h_1c" IMAGE_EXT;
+    inline static const std::string v_ext           = "@208w_280h_1c" IMAGE_EXT;
+    inline static const std::string face_ext        = "@64w_64h_1c_1s" IMAGE_EXT;
+    inline static const std::string face_large_ext  = "@128w_128h_1c_1s" IMAGE_EXT;
+    inline static const std::string emoji_size1_ext = "@48w_48h" IMAGE_EXT;
+    inline static const std::string emoji_size2_ext = "@72w_72h" IMAGE_EXT;
+    inline static const std::string note_ext        = "@540w_540h_85q_!note-comment-multiple" IMAGE_EXT;
+    inline static const std::string note_raw_ext    = "@!web-comment-note" IMAGE_EXT;
+    static constexpr float note_small               = 5.0f;
 #else
     inline static const std::string h_ext           = "@672w_378h_1c" IMAGE_EXT;
     inline static const std::string v_ext           = "@312w_420h_1c" IMAGE_EXT;
@@ -105,7 +117,7 @@ protected:
     void clean();
 
 private:
-    bool isCancel{};
+    std::atomic_bool isCancel{false};
     brls::Image* imageView;
     std::string imageUrl;
     Pool::iterator currentIter;

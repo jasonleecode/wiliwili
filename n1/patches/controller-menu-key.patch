@@ -1,0 +1,23 @@
+--- a/library/borealis/library/lib/platforms/glfw/glfw_input.cpp
++++ b/library/borealis/library/lib/platforms/glfw/glfw_input.cpp
+@@ -264,6 +264,10 @@
+     }
+ 
+     // Add keyboard keys on top of gamepad buttons
++    // Some controllers expose a dedicated menu key through a keyboard interface.
++    // Treat it like Start, which opens the player's quality selector.
++    state->buttons[BUTTON_START] |= glfwGetKey(this->window, GLFW_KEY_MENU) == GLFW_PRESS;
++
+     if (Application::isSwapInputKeys()) {
+         state->buttons[BUTTON_B] |= glfwGetKey(this->window, GLFW_KEY_KP_ENTER) != 0;
+         state->buttons[BUTTON_B] |= glfwGetKey(this->window, GLFW_KEY_ENTER) != 0;
+--- a/library/borealis/library/lib/extern/glfw/src/x11_init.c
++++ b/library/borealis/library/lib/extern/glfw/src/x11_init.c
+@@ -84,6 +84,7 @@
+         case XK_Alt_R:          return GLFW_KEY_RIGHT_ALT;
+         case XK_Super_L:        return GLFW_KEY_LEFT_SUPER;
+         case XK_Super_R:        return GLFW_KEY_RIGHT_SUPER;
++        case 0x1008FF65: // XF86MenuKB, emitted by consumer-control menu keys
+         case XK_Menu:           return GLFW_KEY_MENU;
+         case XK_Num_Lock:       return GLFW_KEY_NUM_LOCK;
+         case XK_Caps_Lock:      return GLFW_KEY_CAPS_LOCK;

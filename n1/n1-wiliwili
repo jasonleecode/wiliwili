@@ -1,0 +1,8 @@
+#!/bin/sh
+export LD_LIBRARY_PATH=/opt/n1-wiliwili/lib:/opt/n1-mpv/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -S "$XDG_RUNTIME_DIR/bus" ]; then
+    exec systemd-run --user --scope --quiet --collect \
+        --unit="n1-wiliwili-$$" --property=MemoryMax=768M \
+        --property=MemorySwapMax=64M -- /opt/wiliwili/bin/wiliwili "$@"
+fi
+exec /opt/wiliwili/bin/wiliwili "$@"

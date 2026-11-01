@@ -1,0 +1,21 @@
+--- a/wiliwili/source/view/mpv_core.cpp
++++ b/wiliwili/source/view/mpv_core.cpp
+@@ -1119,8 +1119,18 @@
+                         break;
+                     case 15:
+                         if (data) {
++                            const bool retrySoftwareSeek = video_seeking && hwCurrent == "v4l2m2m-copy" &&
++                                                           std::string(*(char **)data) == "no";
+                             hwCurrent = *(char **)data;
+                             brls::Logger::info("========> HW: {}", hwCurrent);
++                            // A V4L2 fallback after a seek can lose the GOP's keyframe.
++                            // Re-seek once with the software decoder so it receives that
++                            // keyframe and can reach the requested playback position.
++                            if (retrySoftwareSeek) {
++                                double target = playback_time;
++                                mpvGetProperty(mpv, "time-pos", MPV_FORMAT_DOUBLE, &target);
++                                if (target >= 0) command_async("seek", target, "absolute+exact");
++                            }
+                             GA("hwdec", {{"hwdec", hwCurrent}})
+                         }
+                         break;

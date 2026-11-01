@@ -1,0 +1,30 @@
+--- a/library/borealis/library/lib/platforms/glfw/glfw_input.cpp
++++ b/library/borealis/library/lib/platforms/glfw/glfw_input.cpp
+@@ -200,7 +200,7 @@
+         glfwSetTouchCallback(window, glfwTouchCallback);
+     }
+ 
+-    for (int i = 0; i < GAMEPADS_MAX; i++)
++    for (int i = 0; i <= GLFW_JOYSTICK_LAST; i++)
+     {
+         const char* guid = glfwGetJoystickGUID(i);
+         if (guid)
+@@ -244,7 +244,7 @@
+     if (!glfwGetWindowAttrib(window, GLFW_FOCUSED))
+         return;
+ 
+-    for (int i = 0; i < GAMEPADS_MAX; i++)
++    for (int i = 0; i <= GLFW_JOYSTICK_LAST; i++)
+     {
+         ControllerState localState {};
+         updateControllerState(&localState, i);
+@@ -292,7 +292,8 @@
+ {
+     // Get gamepad state
+     GLFWgamepadstate glfwState = {};
+-    glfwGetGamepadState(controller, &glfwState);
++    if (!glfwGetGamepadState(controller, &glfwState))
++        return;
+ 
+     for (size_t i = 0; i < GLFW_GAMEPAD_BUTTON_MAX; i++)
+     {

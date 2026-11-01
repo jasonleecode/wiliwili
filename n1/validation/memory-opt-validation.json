@@ -1,0 +1,84 @@
+{
+  "date": "2026-11-01",
+  "application_sha256": "af6136be590f479ccded27a63fa3ebe9b8e26c7faff058d60608300a2c73bdd4",
+  "codec_sha256": "acff2e427d4e09f96797e8470527f6495cda3bbbe5478fe7d98ce70dff3cc99d",
+  "1080p_frame_md5_matches": 120,
+  "baseline_fps_with_hashing": 18.7,
+  "optimized_fps_with_hashing": 34.023249220300535,
+  "live_seconds": 60.105512998999984,
+  "live_drop_per_second": 1.0980689907945398,
+  "max_abs_avsync": 0.012167,
+  "cache_pauses": 0,
+  "max_scope_memory_bytes": 215654400,
+  "max_scope_swap_bytes": 0,
+  "seeks": [
+    {
+      "seek": -20,
+      "time": 907.95,
+      "hwdec": "v4l2m2m-copy",
+      "avsync": 0.000174,
+      "mem": {
+        "MemAvailable": 806420,
+        "CmaFree": 92252
+      }
+    },
+    {
+      "seek": 10,
+      "time": 918.95,
+      "hwdec": "v4l2m2m-copy",
+      "avsync": 0.000169,
+      "mem": {
+        "MemAvailable": 806916,
+        "CmaFree": 94648
+      }
+    },
+    {
+      "seek": -15,
+      "time": 904.35,
+      "hwdec": "v4l2m2m-copy",
+      "avsync": 0.002163,
+      "mem": {
+        "MemAvailable": 809228,
+        "CmaFree": 94580
+      }
+    },
+    {
+      "seek": 20,
+      "time": 924.95,
+      "hwdec": "v4l2m2m-copy",
+      "avsync": 5.4e-05,
+      "mem": {
+        "MemAvailable": 793788,
+        "CmaFree": 80216
+      }
+    },
+    {
+      "seek": -10,
+      "time": 915.15,
+      "hwdec": "v4l2m2m-copy",
+      "avsync": 0.011864,
+      "mem": {
+        "MemAvailable": 808436,
+        "CmaFree": 94580
+      }
+    },
+    {
+      "seek": 15,
+      "time": 930.716688,
+      "hwdec": "v4l2m2m-copy",
+      "avsync": 0.001568,
+      "mem": {
+        "MemAvailable": 806476,
+        "CmaFree": 94580
+      }
+    }
+  ],
+  "asan_ubsan_copy_and_texture_tests": "passed",
+  "texture_churn_count": 5000,
+  "physical_picture_sound": "user confirmed smooth and normal",
+  "limitations": [
+    "Short-duration validation; multi-day memory stability not established",
+    "CPU-visible NV12 and GLES upload remain; not full DMA-BUF zero-copy",
+    "About 1.1 output drops/sec remain on measured 1080p30 video"
+  ]
+}

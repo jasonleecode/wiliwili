@@ -1,0 +1,48 @@
+{
+  "version": "v1.6.0",
+  "source": "https://github.com/xfangfang/wiliwili/tree/v1.6.0",
+  "architecture": "aarch64",
+  "graphics": "GLES2",
+  "dependencies": {
+    "MemoryModule": "7739ba4b2d87395446bbdcad6ae8bf9131b4250b",
+    "OpenCC": "ccae908834c2fe41ba02141fa5d0eef178a45080",
+    "QR-Code-generator": "720f62bddb7226106071d4728c292cb1df519ceb",
+    "borealis": "5f08b286f3df737f3321d2247a6fe633fcead03c",
+    "cpr": "ef35a614f1feb6ba0d4de13b1950bcaf7faad060",
+    "libpdr": "9dd3ab920940adac013a3cf40e3a5805d7e193e1",
+    "lunasvg": "f924651b85cac47dbe15f51a4aa320461fc1d07b",
+    "mongoose": "4328842400370f62d00b6a6b23f1cbe0cded4073",
+    "pystring": "7d16bc814ccb4cad03c300dcb77440034caa84f7"
+  },
+  "patches": [
+    "gles2-framebuffer-loader.patch",
+    "glfw-controller-slots.patch",
+    "n1-hwdec-fallback-seek.patch",
+    "linux-mouse-gamepad-switch.patch",
+    "controller-menu-key.patch"
+  ],
+  "build_container": "n1-wiliwili-builder",
+  "hardware_decode": {
+    "source": "FFmpeg 5.1.9 with retained N1 MPV reset2 patches",
+    "container": "n1-hwdecode-workbench",
+    "patch": "patches/ffmpeg-v4l2-source-change.patch",
+    "baseline_sha256": "55664501d416f6271fccb820bcd154f935d1a5fbbfe5d4e42cfdceb3592c2944",
+    "library_sha256": "acff2e427d4e09f96797e8470527f6495cda3bbbe5478fe7d98ce70dff3cc99d",
+    "library_path": "/opt/n1-wiliwili/lib/libavcodec-fast-20261101.so",
+    "optimization_patch": "patches/ffmpeg-v4l2-copy-fast.patch",
+    "options": "num_capture_buffers=24,n1_copy_frames=0"
+  },
+  "n1_memory_optimization": {
+    "build_option": "N1_LOW_MEMORY=ON",
+    "texture_budget_bytes": 67108864,
+    "scope_memory_max_bytes": 805306368,
+    "scope_swap_max_bytes": 67108864,
+    "source_sha256": {
+      "CMakeLists.txt": "4ab2be3dd772914c12aa2bd3ac9059f8e7ced8307f8eb643f1715f4557de9fc2",
+      "wiliwili/source/utils/config_helper.cpp": "fc6669b41a5754e205c535cfaf791ca3e8499e5b21d09d404e187f3cbee8bc08",
+      "wiliwili/source/utils/image_helper.cpp": "61621e3f18c48c0994e60be4b6613b5ab56957ed727259094f80e27c965027de",
+      "wiliwili/include/utils/image_helper.hpp": "12b8c8e1d78df956c487212d429d3f06fa6498315481c8f5401cba37fccd3b93",
+      "library/borealis/library/include/borealis/core/cache_helper.hpp": "c592a7b99fef2ddb93e3d201712e8740242eb80e3d61e471d3809a71c74b6215"
+    }
+  }
+}

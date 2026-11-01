@@ -1,3 +1,9 @@
+# N1 optimized fork
+
+斐讯 N1 的硬解、帧拷贝、内存与手柄优化见 [N1 中文说明](n1/README.zh-CN.md)。基于上游 v1.6.0，修改分支为 `n1-optimized`。
+
+---
+
 <p align="center">
     <img src="resources/svg/cn.xfangfang.wiliwili.svg" alt="logo" height="128" width="128"/>
 </p>

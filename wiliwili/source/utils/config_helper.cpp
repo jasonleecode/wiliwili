@@ -783,7 +783,14 @@ void ProgramConfig::load() {
 #if defined(__PSV__) || defined(PS4)
         brls::TextureCache::instance().cache.setCapacity(1);
 #else
+#ifdef N1_LOW_MEMORY
+        brls::LRUCache<std::string, size_t>::DEFAULT_CAPACITY = 64;
+        brls::TextureCache::instance().cache.setMemoryLimit(64 * 1024 * 1024);
+        brls::TextureCache::instance().cache.setCapacity(
+            std::max(1, std::min(getSettingItem(SettingItem::TEXTURE_CACHE_NUM, 48), 48)));
+#else
         brls::TextureCache::instance().cache.setCapacity(getSettingItem(SettingItem::TEXTURE_CACHE_NUM, 200));
+#endif
 #endif
 
         // 初始化播放器音量
@@ -817,7 +824,13 @@ void ProgramConfig::load() {
 
         // Hide the mouse cursor when using gamepad or keyboard
         brls::Application::getGlobalInputTypeChangeEvent()->subscribe([](auto type) {
+#ifdef __linux__
+            // Keep the native mouse usable when switching from a gamepad.
+            // Relative pointer capture can trap absolute input devices on X11.
+            brls::Application::getPlatform()->getInputManager()->setPointerLock(false);
+#else
             brls::Application::getPlatform()->getInputManager()->setPointerLock(type == brls::InputType::GAMEPAD);
+#endif
         });
     });
 

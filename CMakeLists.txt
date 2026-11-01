@@ -26,6 +26,10 @@ cmake_dependent_option(INSTALL "Install to system path" OFF "UNIX;NOT APPLE" OFF
 
 # For Developer
 option(DEBUG_SANITIZER "Turn on sanitizers (only available in debug build)" OFF)
+option(N1_LOW_MEMORY "Bound idle image textures for the 2GB N1 build" OFF)
+if (N1_LOW_MEMORY)
+    list(APPEND APP_PLATFORM_OPTION -DN1_LOW_MEMORY)
+endif ()
 
 # Google Analytics
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/GoogleAnalytics.cmake)
